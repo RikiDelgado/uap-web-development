@@ -1,0 +1,15 @@
+# Carpetas de dependencias
+node_modules
+faucet-dapp-web3/node_modules
+faucet-backend/node_modules
+
+# Archivos de build y logs
+dist
+dist-ssr
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Variables de entorno
+.env
+.env.local
