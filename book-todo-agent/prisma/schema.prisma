@@ -1,0 +1,52 @@
+// /prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql" // Tu provider
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// MODELOS PARA EJERCICIO 13 - PARTE 2A: ASESOR DE LIBROS DE IA
+// ----------------------------------------------------
+model ReadingListBook {
+  id             String    @id @default(uuid())
+  userId         String    // Clave foránea para el usuario (reemplazar MOCK_USER_ID)
+  bookId         String    @unique // ID de Google Books. Se necesita para obtener detalles.
+  title          String
+  author         String?
+  thumbnail      String?   // URL de la miniatura
+  status         String    @default("TO_READ") // "TO_READ" | "READ"
+  priority       String    @default("medium") // "high" | "medium" | "low"
+  notes          String?
+  rating         Int?      @map("star_rating") // 1-5 estrellas
+  review         String?
+  dateAdded      DateTime  @default(now())
+  dateFinished   DateTime?
+
+  @@index([userId, status])
+  @@index([bookId])
+}
+
+// ----------------------------------------------------
+// MODELOS PARA EJERCICIO 13 - PARTE 2B: AI TODO MANAGER
+// ----------------------------------------------------
+
+model Task {
+  id             String    @id @default(uuid())
+  userId         String    // Clave foránea para el usuario (reemplazar MOCK_USER_ID)
+  title          String
+  description    String?
+  completed      Boolean   @default(false)
+  priority       String    @default("medium") // "low" | "medium" | "high"
+  category       String    @default("personal") // "work" | "personal" | "shopping" | "health" | "other"
+  dueDate        DateTime?
+  deletedAt      DateTime? // Eliminación suave (Soft Delete)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, completed, priority])
+  @@index([dueDate])
+}

@@ -1,0 +1,69 @@
+// /src/app/api/book-chat/route.ts
+
+// 🟢 Corrección: createToolResultPart se importa de 'ai/tool-call'
+import { streamText, type Tool, type ToolResult } from 'ai';
+import { createToolResultPart } from 'ai';
+import { openai } from '@ai-sdk/openai'; 
+import { bookAdvisorTools, BookAdvisorTool } from '@/lib/tools/book-advisor';
+// import { rateLimit } from '@/lib/rate-limiter'; 
+
+const openrouter = openai({
+  baseURL: process.env.OPENROUTER_BASE_URL,
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+const MOCK_USER_ID = "user-123"; 
+
+const SYSTEM_PROMPT = `Eres un experto y amigable asesor de libros. Tu trabajo es ayudar al usuario a encontrar libros,
+gestionar su lista de lectura, y analizar sus hábitos de lectura. Siempre que la solicitud del usuario
+implique buscar, gestionar datos o generar estadísticas, DEBES usar las herramientas proporcionadas.
+NUNCA inventes información de libros. Siempre responde en español.
+Si el usuario hace referencia a un libro ambiguo ("ese", "el anterior"), intenta usar la herramienta de búsqueda o lista primero.`;
+
+export async function POST(req: Request) {
+  try {
+    const { messages } = await req.json();
+
+    const result = await streamText({
+      // 🟢 Corrección: Usar .chat() y pasar el modelo como string
+      model: openrouter.chat(process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku'),
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      // 🟢 Corrección: Añadir el type cast a CoreTool para satisfacer a TypeScript
+      tools: bookAdvisorTools as CoreTool[], 
+    });
+
+    return result.toAIStream({
+      // 🟢 Corrección: Cambiado a 'onToolCall' y tipado explícito
+      onToolCall: async ({ toolName, args, toolCallId }) => {
+        const selectedTool = bookAdvisorTools.find(t => t.function.name === toolName) as BookAdvisorTool | undefined;
+
+        if (selectedTool) {
+          try {
+            // Ejecutar la función
+            const toolOutput = await selectedTool.function.execute(args);
+
+            return createToolResultPart({
+              toolCallId: toolCallId,
+              result: toolOutput,
+            });
+
+          } catch (error) {
+            console.error(`Error al ejecutar la herramienta ${toolName}:`, error);
+            return createToolResultPart({
+              toolCallId: toolCallId,
+              result: JSON.stringify({ error: `Error al ejecutar la herramienta ${toolName}. Detalles: ${error instanceof Error ? error.message : "Error desconocido"}` }),
+            });
+          }
+        }
+        return createToolResultPart({
+          toolCallId: toolCallId,
+          result: JSON.stringify({ error: `La herramienta ${toolName} no está definida.` }),
+        });
+      },
+    });
+
+  } catch (error) {
+    console.error('Error en la ruta de chat:', error);
+    return new Response(JSON.stringify({ error: 'Error interno del servidor.' }), { status: 500 });
+  }
+}

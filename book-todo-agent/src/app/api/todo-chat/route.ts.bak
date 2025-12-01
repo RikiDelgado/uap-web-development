@@ -1,0 +1,61 @@
+// /src/app/api/todo-chat/route.ts
+
+// 🟢 Corrección: createToolResultPart se importa de 'ai/tool-call'
+import { streamText, type Tool, type ToolResult } from 'ai';
+import { createToolResultPart } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { todoManagerTools, TodoManagerTool } from '@/lib/tools/todo-manager';
+
+const openrouter = openai({
+  baseURL: process.env.OPENROUTER_BASE_URL,
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+const SYSTEM_PROMPT = `Eres un asistente de gestión de tareas llamado Todo-AI. Ayudas al usuario
+a crear, actualizar, eliminar, buscar y obtener estadísticas de sus tareas.
+Debes usar SIEMPRE las herramientas cuando el usuario pida una acción de gestión de tareas.
+Si el usuario menciona una tarea por título sin ID, debes usar 'buscarTareas' para encontrar el ID primero, y luego la acción.
+Confirma SIEMPRE las acciones destructivas (eliminar).
+Responde en español.`;
+
+export async function POST(req: Request) {
+  try {
+    const { messages } = await req.json();
+
+    const result = await streamText({
+      // 🟢 Corrección: Usar .chat() y pasar el modelo como string
+      model: openrouter.chat(process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku'),
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      // 🟢 Corrección: Añadir el type cast a CoreTool
+      tools: todoManagerTools as CoreTool[], 
+    });
+
+    return result.toAIStream({
+      // 🟢 Corrección: Cambiado a 'onToolCall' y tipado explícito
+      onToolCall: async ({ toolName, args, toolCallId }) => {
+        const selectedTool = todoManagerTools.find(t => t.function.name === toolName) as TodoManagerTool | undefined;
+
+        if (selectedTool) {
+          try {
+            const toolOutput = await selectedTool.function.execute(args);
+            return createToolResultPart({ toolCallId: toolCallId, result: toolOutput });
+          } catch (error) {
+            console.error(`Error al ejecutar la herramienta ${toolName}:`, error);
+            return createToolResultPart({
+              toolCallId: toolCallId,
+              result: JSON.stringify({ error: `Error al ejecutar la herramienta ${toolName}. Detalles: ${error instanceof Error ? error.message : "Error de validación o DB"}` }),
+            });
+          }
+        }
+        return createToolResultPart({
+          toolCallId: toolCallId,
+          result: JSON.stringify({ error: `La herramienta ${toolName} no está definida.` }),
+        });
+      },
+    });
+
+  } catch (error) {
+    console.error('Error en la ruta de chat:', error);
+    return new Response(JSON.stringify({ error: 'Error interno del servidor.' }), { status: 500 });
+  }
+}
